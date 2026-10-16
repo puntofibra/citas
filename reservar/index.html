@@ -474,7 +474,8 @@ async function call(action, data = {}) {
   let tries = 0;
   for (;;) {
     try {
-      const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body });
+      const ac = new AbortController(), to = setTimeout(() => ac.abort(), 25000);
+      const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, signal: ac.signal }).finally(() => clearTimeout(to));
       const j = await r.json();
       if (!j.ok) {
         const e = new Error(j.error || 'Error'); e.srv = true;
@@ -624,7 +625,11 @@ async function route() {
       return;
     }
     $('#root').innerHTML = '<div class="center"><span class="spin"></span></div>';
-    try { const d = await call('yo'); if (!d.admin) { d._t = S.token; try { localStorage.setItem('ci_yo', JSON.stringify(d)); } catch (e) { } } return d.admin ? adminInit(d) : panelInit(d); } catch (e) { if (!S.token) return landing(); toast(e.message, 1); }
+    try { const d = await call('yo'); if (!d.admin) { d._t = S.token; try { localStorage.setItem('ci_yo', JSON.stringify(d)); } catch (e) { } } return d.admin ? adminInit(d) : panelInit(d); } catch (e) {
+      if (!S.token) return landing();
+      $('#root').innerHTML = `<div class="center"><div class="card pad" style="text-align:center;max-width:360px"><h2 class="disp">Sin conexión con el servidor</h2><p class="mut">${esc(e.message)}</p><button class="btn pri block" onclick="route()">Reintentar</button><button class="btn block" style="margin-top:8px" onclick="S.token='';localStorage.removeItem('ci_t');localStorage.removeItem('ci_yo');route()">Volver a entrar</button></div></div>`;
+      return;
+    }
   }
   landing();
 }
