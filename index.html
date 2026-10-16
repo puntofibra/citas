@@ -131,6 +131,13 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
 .ipk.up .pv{background-color:rgba(0,0,0,.35);background-blend-mode:darken}
 .ipk.up .pv svg{display:none}
 .ipk input[type=file]{display:none}
+.npw{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:var(--card2);margin-bottom:14px}
+.npb{display:flex;gap:6px}
+.npb button{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--inp);color:var(--ink);font-weight:800;cursor:pointer;transition:transform .15s}
+.npb button:hover{transform:translateY(-1px)}
+.npb button.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 8px 18px -8px var(--brand)}
+.ptabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.ptabs .chip.ok:not(.on){border-color:color-mix(in srgb,var(--ok) 60%,transparent);color:var(--ok)}
 @keyframes pop{from{opacity:0;transform:translateY(24px) scale(.96)}}
 /* ventanas de confirmación */
 .cfm{position:fixed;inset:0;z-index:95;background:rgba(5,10,25,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:16px;animation:fade .2s}
@@ -391,7 +398,7 @@ function imgPick(tipo, url) {
   const ph = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>';
   return `<div class="ipk" data-t="${tipo}" tabindex="0"><input type="hidden" id="${tipo === 'logo' ? 'aL' : 'aP'}" value="${esc(url || '')}"><input type="file" accept="image/png,image/jpeg,image/webp">
     <div class="pv" ${url ? `style="background-image:url('${esc(url)}')"` : ''}>${url ? '' : ph}</div>
-    <div class="tx"><b>${url ? 'Cambiar imagen' : 'Elegir imagen'}</b><span class="mut">${tipo === 'logo' ? 'Cuadrada, JPG o PNG' : 'Horizontal, se ve arriba en tu web'}</span></div>
+    <div class="tx"><b>${url ? 'Cambiar imagen' : 'Elegir imagen'}</b><span class="mut">${tipo === 'logo' ? 'Recomendado <b style="display:inline;font-size:inherit">512 × 512 px</b> (cuadrado) · JPG o PNG' : 'Recomendado <b style="display:inline;font-size:inherit">1200 × 530 px</b> (horizontal) · JPG o PNG'}</span></div>
     ${url ? `<button type="button" class="x" title="Quitar">${ic('x')}</button>` : ''}</div>`;
 }
 function bindImgPick() {
@@ -742,7 +749,7 @@ async function bookingInit(slug) {
       if (B.step === 0 && !$('.mask')) { setBrand(B.neg.color); manifestNegocio(B.neg); renderBooking(); }
     }).catch(() => { });
     else d = await fresco;
-    B = { slug, neg: d.negocio, activo: d.activo, hoy: d.hoy, servs: d.servicios || [], profs: d.profesionales || [], step: 0, serv: null, prof: 'any', fecha: null, hora: null, slotProf: null, mes: null, slots: null, datos: { nombre: '', tel: '', email: '', notas: '' }, listo: null };
+    B = { np: 1, pers: [{ nombre: '', serv: null }], pi: 0, slug, neg: d.negocio, activo: d.activo, hoy: d.hoy, servs: d.servicios || [], profs: d.profesionales || [], step: 0, serv: null, prof: 'any', fecha: null, hora: null, slotProf: null, mes: null, slots: null, datos: { nombre: '', tel: '', email: '', notas: '' }, listo: null };
     setBrand(B.neg.color); document.title = B.neg.nombre + ' · Reserva tu cita';
     manifestNegocio(B.neg);
     try { localStorage.setItem('ci_neg', slug); } catch (e) { }
@@ -760,7 +767,10 @@ const combo = (lst, ids) => {
     duracion: ss.reduce((a, s) => a + Number(s.duracion || 0), 0), precio: ss.reduce((a, s) => a + Number(s.precio || 0), 0) };
 };
 const profsFor = s => B.profs.filter(p => !p.servicios.length || (s && (s.ids || [s.id]).every(i => p.servicios.includes(i))));
-const stepsList = () => (B.serv && profsFor(B.serv).length <= 1) ? [0, 2, 3, 4] : [0, 1, 2, 3, 4];
+const grupo = () => B && B.np > 1;
+const curServ = () => grupo() ? B.pers[B.pi].serv : B.serv;
+const personasPayload = () => grupo() ? B.pers.map(p => ({ nombre: p.nombre, serv: p.serv ? p.serv.id : '' })) : undefined;
+const stepsList = () => grupo() || (B.serv && profsFor(B.serv).length <= 1) ? [0, 2, 3, 4] : [0, 1, 2, 3, 4];
 const TITULOS = { 0: 'Elige tu servicio', 1: 'Elige profesional', 2: 'Elige día y hora', 3: 'Tus datos', 4: '¡Reserva confirmada!' };
 
 function renderBooking() {
@@ -810,6 +820,12 @@ function renderStep() {
 }
 function updSum() {
   const s = $('#sum'); if (!s) return;
+  if (grupo() && B.step !== 4 && B.pers.some(p => p.serv)) {
+    s.classList.add('on');
+    s.innerHTML = B.pers.map((p, i) => `<div style="margin-bottom:6px"><b>${esc(i === 0 ? 'Tú' : (p.nombre || 'Persona ' + (i + 1)))}</b><div class="mut">${p.serv ? esc(p.serv.nombre) + ' · ' + p.serv.duracion + ' min' : 'Sin elegir'}</div></div>`).join('') +
+      (B.fecha && B.hora ? `<div class="mut">${esc(fLarga(B.fecha))} · desde las ${B.hora}</div>` : '') + `<div class="tot"><span>Total</span><span>${eur(B.pers.reduce((a, p) => a + (p.serv ? p.serv.precio : 0), 0))}</span></div>`;
+    return;
+  }
   if (!B.serv || B.step === 4) { s.classList.remove('on'); return; }
   const pr = B.prof !== 'any' ? B.profs.find(p => p.id === B.prof) : null;
   s.classList.add('on');
@@ -819,23 +835,54 @@ function stepServ() {
   const cats = [...new Set(B.servs.map(s => s.categoria))];
   B.cat = B.cat || 'Todos';
   const lista = B.servs.filter(s => B.cat === 'Todos' || s.categoria === B.cat);
-  $('#sb').innerHTML = (cats.length > 1 ? `<div class="cats">${['Todos', ...cats].map(c => `<button class="chip ${B.cat === c ? 'on' : ''}" data-a="cat" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : '') +
-    (lista.length ? lista.map(s => `<button class="svc ${B.serv && B.serv.ids.includes(s.id) ? 'on' : ''}" data-a="serv" data-id="${esc(s.id)}"><span class="ck">✓</span><div class="grow"><div class="nm">${esc(s.nombre)}</div><div class="mut small">${ic('clock')} ${s.duracion} min</div></div><div class="pr">${eur(s.precio)}</div></button>`).join('') : '<div class="empty">Este negocio aún no ha añadido servicios.</div>') +
+  const cs = curServ();
+  const npSel = `<div class="npw"><div><b>¿Para cuántas personas?</b><div class="mut small">Si venís varios, cada uno elige sus servicios</div></div><div class="npb">${[1, 2, 3, 4, 5, 6].map(n => `<button class="${B.np === n ? 'on' : ''}" data-a="np" data-n="${n}">${n}</button>`).join('')}</div></div>`;
+  const pTabs = grupo() ? `<div class="ptabs">${B.pers.map((p, i) => `<button class="chip ${i === B.pi ? 'on' : ''} ${p.serv ? 'ok' : ''}" data-a="pi" data-i="${i}">${p.serv ? '✓ ' : ''}${esc(i === 0 ? 'Tú' : (p.nombre || 'Persona ' + (i + 1)))}</button>`).join('')}</div>
+    ${B.pi > 0 ? `<input class="inp" id="pnom" maxlength="40" placeholder="Nombre de la persona ${B.pi + 1} (opcional)" value="${esc(B.pers[B.pi].nombre)}" style="margin-bottom:12px">` : `<p class="mut small" style="margin:0 0 10px">Elige primero tus servicios; luego los de cada acompañante.</p>`}` : '';
+  $('#sb').innerHTML = npSel + pTabs + (cats.length > 1 ? `<div class="cats">${['Todos', ...cats].map(c => `<button class="chip ${B.cat === c ? 'on' : ''}" data-a="cat" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : '') +
+    (lista.length ? lista.map(s => `<button class="svc ${cs && cs.ids.includes(s.id) ? 'on' : ''}" data-a="serv" data-id="${esc(s.id)}"><span class="ck">✓</span><div class="grow"><div class="nm">${esc(s.nombre)}</div><div class="mut small">${ic('clock')} ${s.duracion} min</div></div><div class="pr">${eur(s.precio)}</div></button>`).join('') : '<div class="empty">Este negocio aún no ha añadido servicios.</div>') +
     (lista.length ? '<p class="mut small" style="text-align:center;margin:12px 0 0">Puedes marcar varios servicios para hacerlos en la misma cita</p><div class="svgo" id="svgo"></div>' : '');
+  const pn = $('#pnom'); if (pn) pn.oninput = () => { B.pers[B.pi].nombre = pn.value.trim(); const b = $(`.ptabs [data-i="${B.pi}"]`); if (b) b.textContent = (B.pers[B.pi].serv ? '✓ ' : '') + (B.pers[B.pi].nombre || 'Persona ' + (B.pi + 1)); };
   pintaGo();
 }
 function pintaGo() {
   const g = $('#svgo'); if (!g) return;
+  if (grupo()) {
+    const cs = curServ(), falta = B.pers.findIndex(p => !p.serv), tot = B.pers.reduce((a, p) => a + (p.serv ? p.serv.precio : 0), 0);
+    const nom = i => i === 0 ? 'tus servicios' : (B.pers[i].nombre || 'Persona ' + (i + 1));
+    g.innerHTML = falta < 0 ? `<button class="btn pri block" data-a="servGo">Continuar · ${B.np} personas · ${eur(tot)}</button>`
+      : cs ? `<button class="btn pri block" data-a="pi" data-i="${falta}">Siguiente: ${esc(nom(falta))} ${ic('right')}</button>` : '';
+    return;
+  }
   g.innerHTML = B.serv ? `<button class="btn pri block" data-a="servGo">Continuar · ${B.serv.ids.length} ${B.serv.ids.length === 1 ? 'servicio' : 'servicios'} · ${B.serv.duracion} min · ${eur(B.serv.precio)}</button>` : '';
 }
 H.cat = t => { B.cat = t.dataset.c; stepServ(); };
 H.serv = t => {
-  const id = t.dataset.id, sel = B.serv ? B.serv.ids.slice() : [], k = sel.indexOf(id);
+  const cs = curServ(), id = t.dataset.id, sel = cs ? cs.ids.slice() : [], k = sel.indexOf(id);
   if (k >= 0) sel.splice(k, 1); else sel.push(id);
-  B.serv = combo(B.servs, sel.join(',')); B.fecha = B.hora = null; B.slots = null;
+  const nv = combo(B.servs, sel.join(','));
+  if (grupo()) { B.pers[B.pi].serv = nv; B.serv = null; const b = $(`.ptabs [data-i="${B.pi}"]`); if (b) b.classList.toggle('ok', !!nv), b.textContent = (nv ? '✓ ' : '') + (B.pi === 0 ? 'Tú' : (B.pers[B.pi].nombre || 'Persona ' + (B.pi + 1))); }
+  else B.serv = nv;
+  B.fecha = B.hora = null; B.slots = null;
   t.classList.toggle('on', k < 0); updSum(); pintaGo();
 };
+H.np = t => {
+  const n = +t.dataset.n; if (n === B.np) return;
+  if (B.np === 1) B.pers[0].serv = B.serv && B.serv.ids && B.serv.ids.length ? B.serv : B.pers[0].serv;
+  while (B.pers.length < n) B.pers.push({ nombre: '', serv: null });
+  B.pers.length = n; B.np = n; B.pi = 0;
+  B.serv = n === 1 ? B.pers[0].serv : null; B.fecha = B.hora = null; B.slots = null; B.prof = 'any';
+  renderStep();
+};
+H.pi = t => { B.pi = +t.dataset.i; stepServ(); };
 H.servGo = () => {
+  if (grupo()) {
+    const i = B.pers.findIndex(p => !p.serv); if (i >= 0) { B.pi = i; return stepServ(); }
+    const j = B.pers.findIndex(p => !profsFor(p.serv).length);
+    if (j >= 0) return toast('Ningún profesional hace todos los servicios de ' + (j === 0 ? 'tu cita' : (B.pers[j].nombre || 'la persona ' + (j + 1))) + '. Quita alguno.', 1);
+    B.serv = { id: 'G:' + B.pers.map(p => p.serv.id).join('/'), ids: [], nombre: B.np + ' personas', duracion: B.pers.reduce((a, p) => a + p.serv.duracion, 0), precio: B.pers.reduce((a, p) => a + p.serv.precio, 0) };
+    B.prof = 'any'; B.step = 2; return renderStep();
+  }
   if (!B.serv) return;
   const ps = profsFor(B.serv);
   if (!ps.length) return toast('Ningún profesional hace todos esos servicios en la misma cita. Quita alguno.', 1);
@@ -851,6 +898,7 @@ H.prof = t => { B.prof = t.dataset.id; B.fecha = B.hora = null; B.slots = null; 
 H.atras = () => { const l = stepsList(); B.step = l[Math.max(0, l.indexOf(B.step) - 1)]; renderStep(); };
 
 function diaAbierto(f) {
+  if (grupo()) { const dw = String(parseF(f).getDay()); return B.profs.some(p => (p.horario[dw] || []).length); }
   const ps = profsFor(B.serv).filter(p => B.prof === 'any' || p.id === B.prof);
   const dw = String(parseF(f).getDay());
   return ps.some(p => (p.horario[dw] || []).length);
@@ -882,7 +930,7 @@ function cargaMes() {
   let desde = ymd(y, m, 1), hasta = ymd(y, m, nd); const max = addD(B.hoy, 90);
   if (desde < B.hoy) desde = B.hoy; if (hasta > max) hasta = max;
   const e = { dias: null };
-  e.p = desde > hasta ? Promise.resolve({}) : call('dispRango', { slug: B.slug, serv: B.serv.id, prof: B.prof, desde, hasta }).then(r => {
+  e.p = desde > hasta ? Promise.resolve({}) : call('dispRango', { slug: B.slug, serv: B.serv.id, prof: B.prof, desde, hasta, personas: personasPayload() }).then(r => {
     e.dias = r.dias; if (dispKey() === k && $('#cal')) { drawCal(); if (B.fecha && B.slots === 'cargando' && r.dias[B.fecha]) { B.slots = r.dias[B.fecha]; drawSlots(); } }
     return r.dias; }).catch(() => { delete B.dm[k]; return {}; });
   B.dm[k] = e; return e.p;
@@ -893,7 +941,7 @@ H.dia = async t => {
   const cs = slotsMes(B.fecha);
   if (cs) { B.slots = cs; drawCal(); drawSlots(); updSum(); return; }
   B.slots = 'cargando'; drawCal(); drawSlots(); updSum();
-  try { const d = await call('disp', { slug: B.slug, serv: B.serv.id, prof: B.prof, fecha: B.fecha }); if (B.fecha !== t.dataset.f) return; B.slots = d.slots; }
+  try { const d = await call('disp', { slug: B.slug, serv: B.serv.id, prof: B.prof, fecha: B.fecha, personas: personasPayload() }); if (B.fecha !== t.dataset.f) return; B.slots = d.slots; }
   catch (e) { B.slots = []; toast(e.message, 1); }
   drawSlots();
 };
@@ -925,7 +973,7 @@ async function confirmar() {
   if (B.datos.tel.replace(/\D/g, '').length < 9) return toast('Escribe un teléfono válido', 1);
   loading(b, true);
   try {
-    const d = await call('reservar', { slug: B.slug, serv: B.serv.id, prof: B.slotProf || B.prof, fecha: B.fecha, hora: B.hora, ...B.datos });
+    const d = await call('reservar', { slug: B.slug, serv: B.serv.id, prof: B.slotProf || B.prof, fecha: B.fecha, hora: B.hora, ...B.datos, personas: personasPayload() });
     B.dm = {};
     B.listo = d;
     localStorage.setItem('ci_ult_' + B.slug, JSON.stringify({ id: d.id, codigo: d.codigo, fecha: d.fecha, hora: d.hora, servicio: d.servicio }));
@@ -941,10 +989,10 @@ function stepListo() {
   $('#sb').innerHTML = `<div class="okwrap"><svg class="okc" viewBox="0 0 92 92"><circle cx="46" cy="46" r="41"/><path d="M28 47l12 12 24-26"/></svg>
     <p class="mut" style="margin:0">Te esperamos en <b>${esc(n.nombre)}</b></p>
     <div class="ticket">
-      <div class="l"><span class="mut">Servicio</span><b>${esc(r.servicio)}</b></div>
+      ${r.detalle ? r.detalle.map(x => `<div class="l"><span class="mut">${esc(x.nombre.split(' ')[0])} · ${esc(x.hora)}</span><b>${esc(x.servicio)}${x.profesional ? ' <span class="mut" style="font-weight:500">con ' + esc(x.profesional) + '</span>' : ''}</b></div>`).join('') : `<div class="l"><span class="mut">Servicio</span><b>${esc(r.servicio)}</b></div>`}
       <div class="l"><span class="mut">Día</span><b>${esc(cap(fLarga(r.fecha)))}</b></div>
       <div class="l"><span class="mut">Hora</span><b>${esc(r.hora)}</b></div>
-      ${r.profesional ? `<div class="l"><span class="mut">Profesional</span><b>${esc(r.profesional)}</b></div>` : ''}
+      ${r.profesional && !r.detalle ? `<div class="l"><span class="mut">Profesional</span><b>${esc(r.profesional)}</b></div>` : ''}
       <div class="l"><span class="mut">Precio</span><b>${eur(r.precio)}</b></div>
     </div>
     <div class="row" style="justify-content:center">
@@ -956,7 +1004,7 @@ function stepListo() {
       <button class="btn sm danger" data-a="cancelarUlt">Cancelar esta cita</button>
     </div></div>`;
 }
-H.otra = () => { B.step = 0; B.serv = null; B.fecha = B.hora = null; B.slots = null; B.prof = 'any'; B.listo = null; renderStep(); };
+H.otra = () => { B.step = 0; B.serv = null; B.np = 1; B.pers = [{ nombre: '', serv: null }]; B.pi = 0; B.fecha = B.hora = null; B.slots = null; B.prof = 'any'; B.listo = null; renderStep(); };
 H.ics = () => {
   const r = B.listo, p = n => String(n).padStart(2, '0');
   const [y, m, d] = r.fecha.split('-'), [hh, mm] = r.hora.split(':').map(Number), fin = hh * 60 + mm + r.dur;
