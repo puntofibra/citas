@@ -87,7 +87,7 @@ function ruta(p) {
     return adm[a](p, s);
   }
   const neg = { yo: yoNegocio, guardarNegocio: guardarNegocio, servGuardar: servGuardar, servBorrar: servBorrar,
-    profGuardar: profGuardar, profBorrar: profBorrar, agenda: agenda, citaEstado: citaEstado, citaManual: citaManual,
+    profGuardar: profGuardar, profBorrar: profBorrar, subirImagen: subirImagen, quitarImagen: quitarImagen, agenda: agenda, citaEstado: citaEstado, citaManual: citaManual,
     cambiarPass: cambiarPass, logout: logout };
   if (!neg[a]) throw new Error('Acción no permitida');
   return neg[a](p, s);
@@ -517,6 +517,50 @@ function guardarNegocio(p, s) {
     n.paso = [10, 15, 20, 30, 45, 60].indexOf(+d.paso) >= 0 ? +d.paso : 30;
     n.antelacion = Math.max(0, Math.min(10080, +d.antelacion || 0));
     guardarFila('Negocios', n);
+    return { negocio: datosPublicos(n) };
+  });
+}
+/* ============ IMÁGENES (logo / portada) EN DRIVE ============ */
+// Se guardan en la carpeta "logos", junto al Sheet. Ejecuta autorizarDrive() una vez desde el editor para dar permiso.
+function autorizarDrive() { return carpetaLogos_().getName() + ' lista'; }
+function carpetaLogos_() {
+  const id = props().getProperty('LOGOS_DIR');
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) { } }
+  const ps = DriveApp.getFileById(SHEET_ID).getParents();
+  const padre = ps.hasNext() ? ps.next() : DriveApp.getRootFolder();
+  const it = padre.getFoldersByName('logos');
+  const f = it.hasNext() ? it.next() : padre.createFolder('logos');
+  props().setProperty('LOGOS_DIR', f.getId());
+  return f;
+}
+function idDrive_(url) { const m = String(url || '').match(/googleusercontent\.com\/d\/([\w-]{20,})/); return m ? m[1] : ''; }
+function subirImagen(p, s) {
+  const tipo = p.tipo === 'portada' ? 'portada' : 'logo';
+  const mime = String(p.mime || '');
+  if (['image/jpeg', 'image/png', 'image/webp'].indexOf(mime) < 0) throw new Error('Formato no válido (usa JPG, PNG o WEBP)');
+  const bytes = Utilities.base64Decode(String(p.datos || ''));
+  if (!bytes.length) throw new Error('Imagen vacía');
+  if (bytes.length > 3 * 1024 * 1024) throw new Error('La imagen es demasiado grande (máx. 3 MB)');
+  return conLock(() => {
+    const n = miNegocio(s);
+    const ext = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[mime];
+    const file = carpetaLogos_().createFile(Utilities.newBlob(bytes, mime, n.slug + '-' + tipo + '-' + Date.now() + '.' + ext));
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    const url = 'https://lh3.googleusercontent.com/d/' + file.getId();
+    const viejo = idDrive_(n[tipo]);
+    if (viejo) { try { DriveApp.getFileById(viejo).setTrashed(true); } catch (e) { } }
+    n[tipo] = url;
+    guardarFila('Negocios', n);
+    return { url: url, negocio: datosPublicos(n) };
+  });
+}
+function quitarImagen(p, s) {
+  const tipo = p.tipo === 'portada' ? 'portada' : 'logo';
+  return conLock(() => {
+    const n = miNegocio(s);
+    const viejo = idDrive_(n[tipo]);
+    if (viejo) { try { DriveApp.getFileById(viejo).setTrashed(true); } catch (e) { } }
+    n[tipo] = ''; guardarFila('Negocios', n);
     return { negocio: datosPublicos(n) };
   });
 }
