@@ -9,7 +9,13 @@
 /* ============ CONFIG ============ */
 const ADMIN_EMAIL = 'futurmovil.com@gmail.com';
 const MYPOS_TAG = 'https://mypos.com/@futurmovil';
-const PRECIO_MES = 10;          // € por 30 días de suscripción
+const PLANES = [                 // planes de suscripción (precio total en €)
+  { meses: 1, dias: 30, precio: 15 },
+  { meses: 3, dias: 90, precio: 36 },
+  { meses: 6, dias: 180, precio: 60 },
+  { meses: 12, dias: 365, precio: 100 }
+];
+const PRECIO_MES = PLANES[0].precio;
 const DIAS_PRUEBA = 14;         // prueba gratuita al registrarse
 const APP_NOMBRE = 'Citas Pro';
 const SESION_HORAS = 24 * 14;   // duración de la sesión
@@ -566,7 +572,7 @@ function yoNegocio(p, s) {
   if (!n) throw new Error('Cuenta no encontrada');
   return { negocio: datosPublicos(n), email: n.email, venceEn: n.venceEn, activo: activo(n), hoy: hoyStr(), estado: n.estado,
     servicios: serviciosDe(n.id, true), profesionales: profesDe(n.id, true),
-    pago: { tag: MYPOS_TAG, precio: PRECIO_MES, dias: 30 } };
+    pago: { tag: MYPOS_TAG, precio: PRECIO_MES, dias: 30, planes: PLANES } };
 }
 function guardarNegocio(p, s) {
   return conLock(() => {
@@ -725,7 +731,7 @@ function citaManual(p, s) {
 }
 
 /* ============ PANEL ADMIN ============ */
-function yoAdmin() { return { admin: true, precio: PRECIO_MES, hoy: hoyStr(), email: ADMIN_EMAIL }; }
+function yoAdmin() { return { admin: true, precio: PRECIO_MES, planes: PLANES, hoy: hoyStr(), email: ADMIN_EMAIL }; }
 function adminNegocios() {
   const citas = tabla('Citas');
   return {
