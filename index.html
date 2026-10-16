@@ -482,8 +482,19 @@ async function route() {
   if (slug) return bookingInit(slug);
   if (!S.token && !Q.has('panel') && isStandalone()) { let g = null; try { g = localStorage.getItem('ci_neg'); } catch (e) { } if (g) return bookingInit(g); }
   if (S.token) {
+    let c = null; try { c = JSON.parse(localStorage.getItem('ci_yo') || 'null'); } catch (e) { }
+    if (c && c._t === S.token) {
+      panelInit(c);
+      call('yo').then(d => {
+        if (d.admin) return adminInit(d);
+        d._t = S.token; try { localStorage.setItem('ci_yo', JSON.stringify(d)); } catch (e) { }
+        if (JSON.stringify(d) === JSON.stringify(c)) return;
+        if (P && P.tab === 'agenda' && !$('.mask')) { const f = P.fecha, v = P.vista, ca = P.cache; panelInit(d); P.cache = ca; if (f !== P.fecha || v !== P.vista) { P.fecha = f; P.vista = v; pAgenda(); } } else if (P) P.yo = d;
+      }).catch(e => { if (!S.token) landing(); });
+      return;
+    }
     $('#root').innerHTML = '<div class="center"><span class="spin"></span></div>';
-    try { const d = await call('yo'); return d.admin ? adminInit(d) : panelInit(d); } catch (e) { if (!S.token) return landing(); toast(e.message, 1); }
+    try { const d = await call('yo'); if (!d.admin) { d._t = S.token; try { localStorage.setItem('ci_yo', JSON.stringify(d)); } catch (e) { } } return d.admin ? adminInit(d) : panelInit(d); } catch (e) { if (!S.token) return landing(); toast(e.message, 1); }
   }
   landing();
 }
@@ -623,7 +634,14 @@ let B = null;
 async function bookingInit(slug) {
   $('#root').innerHTML = `<div class="bk"><div class="card skel" style="height:420px"></div><div class="card skel" style="height:520px"></div></div>`;
   try {
-    const d = await call('negocio', { slug });
+    let d = null; try { d = JSON.parse(localStorage.getItem('ci_nc_' + slug) || 'null'); } catch (e) { }
+    const fresco = call('negocio', { slug }).then(r => { try { localStorage.setItem('ci_nc_' + slug, JSON.stringify(r)); } catch (e) { } return r; });
+    if (d) fresco.then(r => {
+      if (!B || B.slug !== slug || JSON.stringify(r) === JSON.stringify(d)) return;
+      Object.assign(B, { neg: r.negocio, activo: r.activo, hoy: r.hoy, servs: r.servicios || [], profs: r.profesionales || [] });
+      if (B.step === 0 && !$('.mask')) { setBrand(B.neg.color); manifestNegocio(B.neg); renderBooking(); }
+    }).catch(() => { });
+    else d = await fresco;
     B = { slug, neg: d.negocio, activo: d.activo, hoy: d.hoy, servs: d.servicios || [], profs: d.profesionales || [], step: 0, serv: null, prof: 'any', fecha: null, hora: null, slotProf: null, mes: null, slots: null, datos: { nombre: '', tel: '', email: '', notas: '' }, listo: null };
     setBrand(B.neg.color); document.title = B.neg.nombre + ' · Reserva tu cita';
     manifestNegocio(B.neg);
@@ -739,7 +757,7 @@ function diaAbierto(f) {
 }
 function stepFecha() {
   $('#sb').innerHTML = `<div class="calwrap"><div class="cal" id="cal"></div><div class="slots" id="slots"></div></div>`;
-  drawCal(); drawSlots();
+  drawCal(); drawSlots(); cargaMes();
 }
 function drawCal() {
   const [y, m] = B.mes, first = new Date(y, m, 1), off = (first.getDay() + 6) % 7, nd = new Date(y, m + 1, 0).getDate();
@@ -748,16 +766,33 @@ function drawCal() {
   let cells = '';
   for (let i = 0; i < off; i++) cells += '<span class="day vac"></span>';
   for (let d = 1; d <= nd; d++) {
-    const f = ymd(y, m, d), dis = f < B.hoy || f > max || !diaAbierto(f);
+    const f = ymd(y, m, d), sl = slotsMes(f), dis = f < B.hoy || f > max || !diaAbierto(f) || (sl !== undefined && !sl.length);
     cells += `<button class="day ${f === B.hoy ? 'today' : ''} ${B.fecha === f ? 'on' : ''}" ${dis ? 'disabled' : ''} data-a="dia" data-f="${f}">${d}</button>`;
   }
   const prevOff = y < hy || (y === hy && m <= hm - 1) || (y === hy && m === hm - 1);
   $('#cal').innerHTML = `<div class="head"><button class="back" data-a="mes" data-d="-1" ${(y === hy && m === hm - 1) ? 'disabled style="opacity:.3"' : ''}>${ic('left')}</button><b>${esc(cap(nombre))}</b><button class="back" data-a="mes" data-d="1">${ic('right')}</button></div>
     <div class="dow">${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(x => `<span>${x}</span>`).join('')}</div><div class="days">${cells}</div>`;
 }
-H.mes = t => { const [hy, hm] = B.hoy.split('-').map(Number); let [y, m] = B.mes; m += +t.dataset.d; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } if (y < hy || (y === hy && m < hm - 1)) return; B.mes = [y, m]; drawCal(); };
+H.mes = t => { const [hy, hm] = B.hoy.split('-').map(Number); let [y, m] = B.mes; m += +t.dataset.d; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } if (y < hy || (y === hy && m < hm - 1)) return; B.mes = [y, m]; drawCal(); cargaMes(); };
+function dispKey() { return B.serv.id + '|' + B.prof + '|' + B.mes.join('-'); }
+function cargaMes() {
+  B.dm = B.dm || {}; const k = dispKey();
+  if (B.dm[k]) return B.dm[k].p;
+  const [y, m] = B.mes, nd = new Date(y, m + 1, 0).getDate();
+  let desde = ymd(y, m, 1), hasta = ymd(y, m, nd); const max = addD(B.hoy, 90);
+  if (desde < B.hoy) desde = B.hoy; if (hasta > max) hasta = max;
+  const e = { dias: null };
+  e.p = desde > hasta ? Promise.resolve({}) : call('dispRango', { slug: B.slug, serv: B.serv.id, prof: B.prof, desde, hasta }).then(r => {
+    e.dias = r.dias; if (dispKey() === k && $('#cal')) { drawCal(); if (B.fecha && B.slots === 'cargando' && r.dias[B.fecha]) { B.slots = r.dias[B.fecha]; drawSlots(); } }
+    return r.dias; }).catch(() => { delete B.dm[k]; return {}; });
+  B.dm[k] = e; return e.p;
+}
+const slotsMes = f => { const e = B.dm && B.dm[dispKey()]; return e && e.dias ? e.dias[f] : undefined; };
 H.dia = async t => {
-  B.fecha = t.dataset.f; B.hora = null; B.slots = 'cargando'; drawCal(); drawSlots(); updSum();
+  B.fecha = t.dataset.f; B.hora = null;
+  const cs = slotsMes(B.fecha);
+  if (cs) { B.slots = cs; drawCal(); drawSlots(); updSum(); return; }
+  B.slots = 'cargando'; drawCal(); drawSlots(); updSum();
   try { const d = await call('disp', { slug: B.slug, serv: B.serv.id, prof: B.prof, fecha: B.fecha }); if (B.fecha !== t.dataset.f) return; B.slots = d.slots; }
   catch (e) { B.slots = []; toast(e.message, 1); }
   drawSlots();
@@ -791,12 +826,13 @@ async function confirmar() {
   loading(b, true);
   try {
     const d = await call('reservar', { slug: B.slug, serv: B.serv.id, prof: B.slotProf || B.prof, fecha: B.fecha, hora: B.hora, ...B.datos });
+    B.dm = {};
     B.listo = d;
     localStorage.setItem('ci_ult_' + B.slug, JSON.stringify({ id: d.id, codigo: d.codigo, fecha: d.fecha, hora: d.hora, servicio: d.servicio }));
     B.step = 4; renderStep(); confetti();
   } catch (e) {
     toast(e.message, 1); loading(b, false);
-    if (/ocupado/.test(e.message)) { B.hora = null; B.slots = null; B.step = 2; renderStep(); if (B.fecha) { const f = B.fecha; setTimeout(() => { const t = $(`.day[data-f="${f}"]`); t && t.click(); }, 50); } }
+    if (/ocupado/.test(e.message)) { B.dm = {}; B.hora = null; B.slots = null; B.step = 2; renderStep(); if (B.fecha) { const f = B.fecha; setTimeout(() => { const t = $(`.day[data-f="${f}"]`); t && t.click(); }, 50); } }
   }
 }
 function stepListo() {
@@ -868,7 +904,7 @@ function panelInit(d) {
   <nav class="botnav card">${TABS.map(t => `<button data-a="ptab" data-t="${t[0]}">${ic(t[1])}${t[2]}</button>`).join('')}</nav>`;
   pTab('agenda');
 }
-H.salir = async () => { try { await call('logout'); } catch { } S.token = ''; localStorage.removeItem('ci_t'); P = null; setBrand('#2563eb'); landing(); };
+H.salir = async () => { try { localStorage.removeItem('ci_yo'); } catch { } try { await call('logout'); } catch { } S.token = ''; localStorage.removeItem('ci_t'); P = null; setBrand('#2563eb'); landing(); };
 H.ptab = t => pTab(t.dataset.t);
 function estadoChip() {
   const y = P.yo, dias = Math.round((parseF(y.venceEn) - parseF(y.hoy)) / 864e5);
@@ -902,13 +938,37 @@ async function pAgenda(silent) {
   if (!silent) $('#fsel').onchange = e => { if (e.target.value) { P.fecha = e.target.value; pAgenda(); } };
   const lun = addD(P.fecha, -((parseF(P.fecha).getDay() + 6) % 7));
   const desde = P.vista === 'dia' ? P.fecha : lun, hasta = P.vista === 'dia' ? P.fecha : addD(lun, 6);
+  const k = desde + '_' + hasta; P.cache = P.cache || {};
+  if (!silent && P.cache[k]) { P.citas = P.cache[k]; pintaAgenda(); }
+  let pintado = !silent && !!P.cache[k];
   try {
-    const nc = (await call('agenda', { desde, hasta })).citas;
-    if (silent && JSON.stringify(nc) === JSON.stringify(P.citas)) return;
+    const nc = await cargaAgenda(desde, hasta);
+    if (P.tab !== 'agenda' || (desde + '_' + hasta) !== agKey()) return;
+    if ((silent || pintado) && JSON.stringify(nc) === JSON.stringify(P.citas)) { precarga(); return; }
     P.citas = nc;
-  } catch (e) { if (silent) return; return toast(e.message, 1); }
+  } catch (e) { if (silent || pintado) return; return toast(e.message, 1); }
   if (P.tab !== 'agenda' || !$('#alist')) return;
   if (silent) toast('Agenda actualizada');
+  pintaAgenda(); precarga();
+}
+function agKey() { const lun = addD(P.fecha, -((parseF(P.fecha).getDay() + 6) % 7)); return P.vista === 'dia' ? P.fecha + '_' + P.fecha : lun + '_' + addD(lun, 6); }
+const agPend = {};
+function cargaAgenda(desde, hasta) {
+  const k = desde + '_' + hasta;
+  if (!agPend[k]) agPend[k] = call('agenda', { desde, hasta }).then(r => { P.cache = P.cache || {}; P.cache[k] = r.citas; return r.citas; }).finally(() => { delete agPend[k]; });
+  return agPend[k];
+}
+/* precarga el día/semana anterior y siguiente para que al cambiar salgan al instante */
+function precarga() {
+  const paso = P.vista === 'semana' ? 7 : 1;
+  [-paso, paso].forEach(d => {
+    const f = addD(P.fecha, d), lun = addD(f, -((parseF(f).getDay() + 6) % 7));
+    const de = P.vista === 'dia' ? f : lun, ha = P.vista === 'dia' ? f : addD(lun, 6);
+    if (!P.cache[de + '_' + ha]) cargaAgenda(de, ha).catch(() => { });
+  });
+}
+function pintaAgenda() {
+  if (P.tab !== 'agenda' || !$('#alist')) return;
   const act = P.citas.filter(c => c.estado !== 'cancelada');
   const ing = act.reduce((a, c) => a + ((combo(P.yo.servicios, c.servId) || {}).precio || 0), 0);
   $('#stats').innerHTML = `<div class="stats"><div class="card stat"><b id="s1">0</b><span>${P.vista === 'dia' ? 'Citas del día' : 'Citas de la semana'}</span></div><div class="card stat"><b id="s2">0</b><span>Ingresos previstos</span></div><div class="card stat"><b>${act[0] ? act[0].hora : '—'}</b><span>Primera cita</span></div></div>`;
@@ -938,7 +998,9 @@ H.hoy = () => { P.fecha = P.yo.hoy; pAgenda(); };
 H.vista = t => { P.vista = t.dataset.v; pAgenda(); };
 H.est = async t => {
   if (t.dataset.e === 'cancelada' && !confirm('¿Cancelar esta cita?')) return;
-  try { await call('citaEstado', { id: t.dataset.id, estado: t.dataset.e }); pAgenda(); } catch (e) { toast(e.message, 1); }
+  const c = P.citas.find(x => x.id === t.dataset.id); const antes = c && c.estado;
+  if (c) { c.estado = t.dataset.e; pintaAgenda(); }
+  try { await call('citaEstado', { id: t.dataset.id, estado: t.dataset.e }); P.cache = {}; } catch (e) { if (c) { c.estado = antes; pintaAgenda(); } toast(e.message, 1); }
 };
 H.nuevaCita = () => {
   const y = P.yo;

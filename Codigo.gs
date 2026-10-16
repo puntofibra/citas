@@ -56,7 +56,7 @@ function salida(o) { return ContentService.createTextOutput(JSON.stringify(o)).s
 
 function ruta(p) {
   const a = String(p.action || '');
-  const publicas = { negocio: negocioPublico, disp: dispPublica, reservar: reservar, cancelar: cancelarPublica,
+  const publicas = { negocio: negocioPublico, disp: dispPublica, dispRango: dispRango, reservar: reservar, cancelar: cancelarPublica,
     registro: registro, login: login, recuperar: recuperar, reset: resetPass, llaveSesion: llaveSesion, llaveEstado: llaveEstado };
   if (publicas[a]) return publicas[a](p);
 
@@ -77,14 +77,26 @@ function ruta(p) {
 
 /* ============ UTILIDADES DE HOJA ============ */
 const SHEET_ID = '1CIXvLIm-4OqxEOrj5VCow3yyWLLxYJwSzfMLprPdAmk';
-function SS() { return SpreadsheetApp.openById(SHEET_ID); }
+let _ss = null; const _sh = {}, _tab = {};
+function SS() { return _ss || (_ss = SpreadsheetApp.openById(SHEET_ID)); }
+function hoja(n) { return _sh[n] || (_sh[n] = SS().getSheetByName(n)); }
+/* Caché: cada tabla se guarda en CacheService y se invalida en cada escritura (mucho más rápido que leer la hoja). */
+function cacheTabla_(n, v) { try { const s = JSON.stringify(v); if (s.length < 95000) CacheService.getScriptCache().put('t2_' + n, s, 600); else CacheService.getScriptCache().remove('t2_' + n); } catch (e) { } }
+function tocar_(n) { delete _tab[n]; try { CacheService.getScriptCache().remove('t2_' + n); } catch (e) { } }
 function norm(k, v) {
   if (v instanceof Date) return Utilities.formatDate(v, tz(), k === 'hora' ? 'HH:mm' : 'yyyy-MM-dd');
   return v;
 }
 function tz() { return Session.getScriptTimeZone() || 'Europe/Madrid'; }
 function tabla(n) {
-  const sh = SS().getSheetByName(n);
+  if (_tab[n]) return _tab[n].map(o => Object.assign({}, o));
+  if (!_enLock) try { const c = CacheService.getScriptCache().get('t2_' + n); if (c) { _tab[n] = JSON.parse(c); return _tab[n].map(o => Object.assign({}, o)); } } catch (e) { }
+  const out = leerHoja_(n);
+  _tab[n] = out; cacheTabla_(n, out);
+  return out.map(o => Object.assign({}, o));
+}
+function leerHoja_(n) {
+  const sh = hoja(n);
   const v = sh.getDataRange().getValues();
   const h = v.shift();
   const out = [];
@@ -98,14 +110,14 @@ function tabla(n) {
 }
 function fila(n, o) { return HOJAS[n].map(k => (o[k] === undefined ? '' : o[k])); }
 function insertar(n, o) {
-  const sh = SS().getSheetByName(n);
+  const sh = hoja(n);
   const r = sh.getLastRow() + 1;
   sh.getRange(r, 1, 1, HOJAS[n].length).setValues([fila(n, o)]);
-  o._r = r;
+  o._r = r; tocar_(n);
   return o;
 }
-function guardarFila(n, o) { SS().getSheetByName(n).getRange(o._r, 1, 1, HOJAS[n].length).setValues([fila(n, o)]); }
-function borrarFila(n, o) { SS().getSheetByName(n).deleteRow(o._r); }
+function guardarFila(n, o) { hoja(n).getRange(o._r, 1, 1, HOJAS[n].length).setValues([fila(n, o)]); tocar_(n); }
+function borrarFila(n, o) { hoja(n).deleteRow(o._r); tocar_(n); }
 function uid() { return Utilities.getUuid().replace(/-/g, '').slice(0, 8); }
 function hoyStr() { return Utilities.formatDate(new Date(), tz(), 'yyyy-MM-dd'); }
 function ahoraMin() { const d = new Date(); return +Utilities.formatDate(d, tz(), 'H') * 60 + +Utilities.formatDate(d, tz(), 'm'); }
@@ -113,7 +125,8 @@ function minutos(h) { const x = String(h).split(':'); return +x[0] * 60 + +x[1];
 function hhmm(m) { return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + (m % 60)).slice(-2); }
 function sumaDias(fecha, n) { const x = fecha.split('-'); const d = new Date(+x[0], +x[1] - 1, +x[2] + n); return Utilities.formatDate(d, tz(), 'yyyy-MM-dd'); }
 function diaSemana(fecha) { const x = fecha.split('-'); return new Date(+x[0], +x[1] - 1, +x[2]).getDay(); }
-function conLock(fn) { const l = LockService.getScriptLock(); l.waitLock(20000); try { return fn(); } finally { l.releaseLock(); } }
+function conLock(fn) { const l = LockService.getScriptLock(); l.waitLock(20000); try { Object.keys(_tab).forEach(k => delete _tab[k]); _enLock = true; return fn(); } finally { _enLock = false; l.releaseLock(); } }
+let _enLock = false;
 function txt(v, max) { return String(v === undefined || v === null ? '' : v).trim().slice(0, max || 200); }
 function esFecha(f) { return /^\d{4}-\d{2}-\d{2}$/.test(f); }
 function esHora(h) { return /^\d{2}:\d{2}$/.test(h); }
@@ -411,6 +424,15 @@ function calcDisp(neg, servId, profId, fecha) {
   profs.forEach(pr => slotsProf(neg, pr, serv.duracion, fecha, citas).forEach(t => { if (!mapa[t]) mapa[t] = pr.id; }));
   return { serv: serv, slots: Object.keys(mapa).map(Number).sort((a, b) => a - b).map(t => ({ h: hhmm(t), p: mapa[t] })) };
 }
+function dispRango(p) {
+  const neg = negPorSlug(p.slug);
+  if (!activo(neg)) throw new Error('Este negocio no admite reservas ahora mismo');
+  const desde = txt(p.desde, 10), hasta = txt(p.hasta, 10);
+  if (!esFecha(desde) || !esFecha(hasta) || hasta < desde) throw new Error('Fechas no válidas');
+  const dias = {};
+  for (let f = desde, i = 0; f <= hasta && i < 42; f = sumaDias(f, 1), i++) dias[f] = calcDisp(neg, txt(p.serv, 300), txt(p.prof, 20), f).slots;
+  return { dias: dias };
+}
 function dispPublica(p) {
   const neg = negPorSlug(p.slug);
   if (!activo(neg)) throw new Error('Este negocio no admite reservas ahora mismo');
@@ -606,5 +628,6 @@ function adminEstado(p) {
 /* Limpieza opcional: programa un activador diario para esta función */
 function limpiarSesiones() {
   const sh = SS().getSheetByName('Sesiones');
-  tabla('Sesiones').filter(x => +x.expira < Date.now()).sort((a, b) => b._r - a._r).forEach(x => sh.deleteRow(x._r));
+  leerHoja_('Sesiones').filter(x => +x.expira < Date.now()).sort((a, b) => b._r - a._r).forEach(x => sh.deleteRow(x._r));
+  tocar_('Sesiones');
 }
