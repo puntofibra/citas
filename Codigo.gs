@@ -398,9 +398,13 @@ function slotsProf(neg, prof, dur, fecha, citas) {
 }
 function calcDisp(neg, servId, profId, fecha) {
   if (!esFecha(fecha)) throw new Error('Fecha no válida');
-  const serv = serviciosDe(neg.id).filter(s => s.id === servId)[0];
-  if (!serv) throw new Error('Servicio no disponible');
-  let profs = profesDe(neg.id).filter(x => !x.servicios.length || x.servicios.indexOf(servId) >= 0);
+  const ids = String(servId || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+  const todos = serviciosDe(neg.id);
+  const lista = ids.map(id => todos.filter(s => s.id === id)[0]);
+  if (!ids.length || lista.some(s => !s)) throw new Error('Servicio no disponible');
+  const serv = { id: ids.join(','), nombre: lista.map(s => s.nombre).join(' + '),
+    duracion: lista.reduce((a, s) => a + Number(s.duracion || 0), 0), precio: lista.reduce((a, s) => a + Number(s.precio || 0), 0) };
+  let profs = profesDe(neg.id).filter(x => !x.servicios.length || ids.every(id => x.servicios.indexOf(id) >= 0));
   if (profId && profId !== 'any') profs = profs.filter(x => x.id === profId);
   const citas = citasDia(neg.id, fecha);
   const mapa = {};
@@ -410,7 +414,7 @@ function calcDisp(neg, servId, profId, fecha) {
 function dispPublica(p) {
   const neg = negPorSlug(p.slug);
   if (!activo(neg)) throw new Error('Este negocio no admite reservas ahora mismo');
-  return { slots: calcDisp(neg, txt(p.serv, 20), txt(p.prof, 20), txt(p.fecha, 10)).slots };
+  return { slots: calcDisp(neg, txt(p.serv, 300), txt(p.prof, 20), txt(p.fecha, 10)).slots };
 }
 
 /* ============ RESERVAS ============ */
@@ -426,7 +430,7 @@ function reservar(p) {
   const fecha = txt(p.fecha, 10), hora = txt(p.hora, 5);
   if (!esHora(hora)) throw new Error('Hora no válida');
   return conLock(() => {
-    const d = calcDisp(neg, txt(p.serv, 20), txt(p.prof, 20), fecha);
+    const d = calcDisp(neg, txt(p.serv, 300), txt(p.prof, 20), fecha);
     const slot = d.slots.filter(s => s.h === hora)[0];
     if (!slot) throw new Error('Esa hora acaba de ocuparse. Elige otra.');
     const codigo = String(Math.floor(100000 + Math.random() * 900000));

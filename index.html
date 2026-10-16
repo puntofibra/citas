@@ -248,6 +248,11 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
   .tbl .hide-m{display:none}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}.rv{opacity:1;transform:none}}
+.svc .ck{width:24px;height:24px;flex:none;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:13px;font-weight:800;color:transparent;margin-right:12px;transition:all .2s}
+.svc.on .ck{background:var(--brand);border-color:var(--brand);color:#fff;transform:scale(1.08)}
+.svgo{position:sticky;bottom:12px;margin-top:12px;z-index:5}
+.svgo .btn{box-shadow:0 14px 34px -12px var(--brand);animation:svgoIn .3s ease}
+@keyframes svgoIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
@@ -260,7 +265,7 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
 /* =====================================================
    CONFIGURACIÓN — pega aquí la URL /exec de tu Apps Script
    ===================================================== */
-const API = 'https://script.google.com/macros/s/AKfycbwii6O9DPtI6DBWIuIhUygm1s70hVIQYZfOyLBWibyROM2WuSZ_etCUxvJHkIx0V07Q-A/exec';
+const API = 'PEGA_AQUI_LA_URL_EXEC';
 const APP = 'Citas Pro';
 
 /* ---------- utilidades ---------- */
@@ -383,6 +388,21 @@ function confetti() {
 }
 
 /* instalar / compartir */
+function manifestNegocio(n) {
+  try {
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    const start = base + '?n=' + encodeURIComponent(n.slug || B.slug);
+    const man = { id: start, name: n.nombre, short_name: String(n.nombre).slice(0, 14), description: 'Reserva tu cita en ' + n.nombre,
+      start_url: start, scope: base, display: 'standalone', orientation: 'portrait', background_color: '#faf6fc', theme_color: n.color || '#c026d3',
+      icons: [{ src: base + 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: base + 'icon-512.png', sizes: '512x512', type: 'image/png' },
+        { src: base + 'maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] };
+    const l = document.querySelector('link[rel=manifest]');
+    if (l) l.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify(man));
+    const t = document.querySelector('meta[name=apple-mobile-web-app-title]'); if (t) t.content = n.nombre;
+    const th = document.querySelector('meta[name=theme-color]'); if (th && n.color) th.content = n.color;
+  } catch (e) {}
+}
+const inApp = /FBAN|FBAV|Instagram|WhatsApp|Line\/|TikTok|GSA\//i.test(navigator.userAgent);
 let deferredPrompt = null;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; });
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -390,9 +410,10 @@ const isStandalone = () => matchMedia('(display-mode: standalone)').matches || n
 H.instalar = async () => {
   if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; return; }
   const m = modal(`<h2 class="disp">Instala la app</h2>
-    <p class="mut">${isIOS ? 'En iPhone se instala desde Safari:' : 'Desde el menú de tu navegador:'}</p>
+    <p class="mut">${isIOS ? 'En iPhone se instala desde Safari en 3 pasos:' : 'Desde el menú de tu navegador:'}</p>
+    ${inApp ? `<p class="mut" style="background:rgba(192,38,211,.08);padding:10px 12px;border-radius:12px">Estás dentro de otra app. Pulsa <b>⋯</b> y elige <b>Abrir en ${isIOS ? 'Safari' : 'Chrome'}</b> para poder instalarla.</p>` : ''}
     <ol style="line-height:1.9;padding-left:20px;margin:12px 0 18px">
-      ${isIOS ? '<li>Abre esta página en <b>Safari</b>.</li><li>Pulsa el botón <b>Compartir</b> (cuadrado con flecha hacia arriba).</li><li>Elige <b>Añadir a pantalla de inicio</b>.</li><li>Pulsa <b>Añadir</b>.</li>'
+      ${isIOS ? '<li>Abre esta página en <b>Safari</b>.</li><li>Pulsa el botón <b>Compartir</b> <span style="display:inline-block;border:1.5px solid currentColor;border-radius:4px;padding:0 5px;font-size:12px">⬆</span> (abajo en el centro, o arriba a la derecha en iPad). Si no lo ves, toca primero <b>⋯</b>.</li><li>Desliza hacia abajo y elige <b>Añadir a pantalla de inicio</b>.</li><li>Pulsa <b>Añadir</b>: el icono aparecerá junto a tus apps.</li>'
         : '<li>Abre el menú <b>⋮</b> del navegador.</li><li>Pulsa <b>Instalar aplicación</b> o <b>Añadir a pantalla de inicio</b>.</li>'}
     </ol><button class="btn pri block" data-a="cerrar">Entendido</button>`);
 };
@@ -559,13 +580,20 @@ async function bookingInit(slug) {
     const d = await call('negocio', { slug });
     B = { slug, neg: d.negocio, activo: d.activo, hoy: d.hoy, servs: d.servicios || [], profs: d.profesionales || [], step: 0, serv: null, prof: 'any', fecha: null, hora: null, slotProf: null, mes: null, slots: null, datos: { nombre: '', tel: '', email: '', notas: '' }, listo: null };
     setBrand(B.neg.color); document.title = B.neg.nombre + ' · Reserva tu cita';
+    manifestNegocio(B.neg);
     const [y, m] = B.hoy.split('-').map(Number); B.mes = [y, m - 1];
     renderBooking();
   } catch (e) {
     $('#root').innerHTML = `<div class="center"><div class="card pad"><h2 class="disp">No encontramos este negocio</h2><p class="mut">Revisa el enlace que te han enviado.</p></div></div>`;
   }
 }
-const profsFor = s => B.profs.filter(p => !p.servicios.length || (s && p.servicios.includes(s.id)));
+const combo = (lst, ids) => {
+  const ss = String(ids || '').split(',').map(i => (lst || []).find(s => s.id === i)).filter(Boolean);
+  if (!ss.length) return null;
+  return { id: ss.map(s => s.id).join(','), ids: ss.map(s => s.id), nombre: ss.map(s => s.nombre).join(' + '),
+    duracion: ss.reduce((a, s) => a + Number(s.duracion || 0), 0), precio: ss.reduce((a, s) => a + Number(s.precio || 0), 0) };
+};
+const profsFor = s => B.profs.filter(p => !p.servicios.length || (s && (s.ids || [s.id]).every(i => p.servicios.includes(i))));
 const stepsList = () => (B.serv && profsFor(B.serv).length <= 1) ? [0, 2, 3, 4] : [0, 1, 2, 3, 4];
 const TITULOS = { 0: 'Elige tu servicio', 1: 'Elige profesional', 2: 'Elige día y hora', 3: 'Tus datos', 4: '¡Reserva confirmada!' };
 
@@ -584,6 +612,7 @@ function renderBooking() {
         ${n.direccion ? `<div class="meta">${ic('pin')}<a target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(n.direccion)}">${esc(n.direccion)}</a></div>` : ''}
         ${n.telefono ? `<div class="meta">${ic('phone')}<a href="tel:${esc(n.telefono)}">${esc(n.telefono)}</a></div>` : ''}
         ${wa}
+        ${isStandalone() ? '' : `<button class="btn pri block" data-a="instalar" style="margin-top:16px">${ic('dl')} Instalar app de ${esc(n.nombre)}</button><p class="mut" style="font-size:12px;text-align:center;margin:6px 0 0">Reserva tus próximas citas en un toque desde tu pantalla de inicio</p>`}
         <div class="sumbox" id="sum"></div>
       </div>
     </aside>
@@ -625,14 +654,27 @@ function stepServ() {
   B.cat = B.cat || 'Todos';
   const lista = B.servs.filter(s => B.cat === 'Todos' || s.categoria === B.cat);
   $('#sb').innerHTML = (cats.length > 1 ? `<div class="cats">${['Todos', ...cats].map(c => `<button class="chip ${B.cat === c ? 'on' : ''}" data-a="cat" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : '') +
-    (lista.length ? lista.map(s => `<button class="svc ${B.serv && B.serv.id === s.id ? 'on' : ''}" data-a="serv" data-id="${esc(s.id)}"><div class="grow"><div class="nm">${esc(s.nombre)}</div><div class="mut small">${ic('clock')} ${s.duracion} min</div></div><div class="pr">${eur(s.precio)}</div></button>`).join('') : '<div class="empty">Este negocio aún no ha añadido servicios.</div>');
+    (lista.length ? lista.map(s => `<button class="svc ${B.serv && B.serv.ids.includes(s.id) ? 'on' : ''}" data-a="serv" data-id="${esc(s.id)}"><span class="ck">✓</span><div class="grow"><div class="nm">${esc(s.nombre)}</div><div class="mut small">${ic('clock')} ${s.duracion} min</div></div><div class="pr">${eur(s.precio)}</div></button>`).join('') : '<div class="empty">Este negocio aún no ha añadido servicios.</div>') +
+    (lista.length ? '<p class="mut small" style="text-align:center;margin:12px 0 0">Puedes marcar varios servicios para hacerlos en la misma cita</p><div class="svgo" id="svgo"></div>' : '');
+  pintaGo();
+}
+function pintaGo() {
+  const g = $('#svgo'); if (!g) return;
+  g.innerHTML = B.serv ? `<button class="btn pri block" data-a="servGo">Continuar · ${B.serv.ids.length} ${B.serv.ids.length === 1 ? 'servicio' : 'servicios'} · ${B.serv.duracion} min · ${eur(B.serv.precio)}</button>` : '';
 }
 H.cat = t => { B.cat = t.dataset.c; stepServ(); };
 H.serv = t => {
-  B.serv = B.servs.find(s => s.id === t.dataset.id); B.fecha = B.hora = null; B.slots = null;
-  const ps = profsFor(B.serv); B.prof = ps.length === 1 ? ps[0].id : 'any';
-  $$('.svc').forEach(x => x.classList.toggle('on', x === t)); updSum();
-  setTimeout(() => { B.step = stepsList()[1]; renderStep(); }, 260);
+  const id = t.dataset.id, sel = B.serv ? B.serv.ids.slice() : [], k = sel.indexOf(id);
+  if (k >= 0) sel.splice(k, 1); else sel.push(id);
+  B.serv = combo(B.servs, sel.join(',')); B.fecha = B.hora = null; B.slots = null;
+  t.classList.toggle('on', k < 0); updSum(); pintaGo();
+};
+H.servGo = () => {
+  if (!B.serv) return;
+  const ps = profsFor(B.serv);
+  if (!ps.length) return toast('Ningún profesional hace todos esos servicios en la misma cita. Quita alguno.', 1);
+  B.prof = ps.length === 1 ? ps[0].id : 'any';
+  B.step = stepsList()[1]; renderStep();
 };
 function stepProf() {
   const ps = profsFor(B.serv);
@@ -751,6 +793,15 @@ H.cancelarUlt = async () => {
    PANEL DEL NEGOCIO
    ===================================================== */
 let P = null;
+/* refresco automático de la agenda cada minuto (y al volver a la pestaña) */
+function refrescoAgenda() {
+  if (!P || P.tab !== 'agenda' || !$('#alist') || document.visibilityState !== 'visible') return;
+  if ($('.mask')) return;
+  const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && a.id !== 'fsel') return;
+  pAgenda(true);
+}
+setInterval(refrescoAgenda, 60000);
+document.addEventListener('visibilitychange', refrescoAgenda);
 const TABS = [['agenda', 'cal', 'Agenda'], ['servicios', 'scissors', 'Servicios'], ['equipo', 'users', 'Equipo'], ['ajustes', 'set', 'Ajustes'], ['enlace', 'link', 'Mi enlace'], ['suscripcion', 'card', 'Plan']];
 function panelInit(d) {
   P = { yo: d, tab: 'agenda', fecha: d.hoy, vista: 'dia', citas: [] };
@@ -792,21 +843,26 @@ function mtop() {
 const pm = h => { $('#pmain').innerHTML = mtop() + h; reveal(); };
 
 /* --- Agenda --- */
-async function pAgenda() {
-  pm(`<div class="ptitle"><h1 class="disp">Agenda</h1><div class="row"><button class="btn pri" data-a="nuevaCita">${ic('plus')} Cita manual</button></div></div>
+async function pAgenda(silent) {
+  if (!silent) pm(`<div class="ptitle"><h1 class="disp">Agenda</h1><div class="row"><button class="btn pri" data-a="nuevaCita">${ic('plus')} Cita manual</button></div></div>
     <div class="row" style="margin-bottom:16px;justify-content:space-between">
       <div class="row"><button class="back" data-a="fecha" data-d="-1">${ic('left')}</button><button class="btn sm" data-a="hoy">Hoy</button><button class="back" data-a="fecha" data-d="1">${ic('right')}</button>
       <input type="date" class="inp" id="fsel" value="${P.fecha}" style="width:auto"></div>
       <div class="tabs" style="width:210px;margin:0"><button data-a="vista" data-v="dia" class="${P.vista === 'dia' ? 'on' : ''}">Día</button><button data-a="vista" data-v="semana" class="${P.vista === 'semana' ? 'on' : ''}">Semana</button></div>
     </div>
     <div id="stats"></div><div id="alist"><div class="skel" style="height:90px;margin-bottom:10px"></div><div class="skel" style="height:90px"></div></div>`);
-  $('#fsel').onchange = e => { if (e.target.value) { P.fecha = e.target.value; pAgenda(); } };
+  if (!silent) $('#fsel').onchange = e => { if (e.target.value) { P.fecha = e.target.value; pAgenda(); } };
   const lun = addD(P.fecha, -((parseF(P.fecha).getDay() + 6) % 7));
   const desde = P.vista === 'dia' ? P.fecha : lun, hasta = P.vista === 'dia' ? P.fecha : addD(lun, 6);
-  try { P.citas = (await call('agenda', { desde, hasta })).citas; } catch (e) { return toast(e.message, 1); }
-  if (P.tab !== 'agenda') return;
+  try {
+    const nc = (await call('agenda', { desde, hasta })).citas;
+    if (silent && JSON.stringify(nc) === JSON.stringify(P.citas)) return;
+    P.citas = nc;
+  } catch (e) { if (silent) return; return toast(e.message, 1); }
+  if (P.tab !== 'agenda' || !$('#alist')) return;
+  if (silent) toast('Agenda actualizada');
   const act = P.citas.filter(c => c.estado !== 'cancelada');
-  const ing = act.reduce((a, c) => a + ((P.yo.servicios.find(s => s.id === c.servId) || {}).precio || 0), 0);
+  const ing = act.reduce((a, c) => a + ((combo(P.yo.servicios, c.servId) || {}).precio || 0), 0);
   $('#stats').innerHTML = `<div class="stats"><div class="card stat"><b id="s1">0</b><span>${P.vista === 'dia' ? 'Citas del día' : 'Citas de la semana'}</span></div><div class="card stat"><b id="s2">0</b><span>Ingresos previstos</span></div><div class="card stat"><b>${act[0] ? act[0].hora : '—'}</b><span>Primera cita</span></div></div>`;
   countUp($('#s1'), act.length); countUp($('#s2'), Math.round(ing), ' €');
   const dias = [...new Set(P.citas.map(c => c.fecha))];
@@ -815,7 +871,7 @@ async function pAgenda() {
   reveal();
 }
 function citaCard(c) {
-  const sv = P.yo.servicios.find(s => s.id === c.servId), pr = P.yo.profesionales.find(p => p.id === c.profId);
+  const sv = combo(P.yo.servicios, c.servId), pr = P.yo.profesionales.find(p => p.id === c.profId);
   const bd = { confirmada: ['', 'Confirmada'], completada: ['ok', 'Completada'], cancelada: ['gray', 'Cancelada'], 'no vino': ['warn', 'No vino'] }[c.estado] || ['', c.estado];
   const rec = encodeURIComponent(`Hola ${c.cliente.split(' ')[0]}, te recordamos tu cita en ${P.yo.negocio.nombre} el ${fLarga(c.fecha)} a las ${c.hora} (${sv ? sv.nombre : 'cita'}). ¡Te esperamos!`);
   return `<div class="card cita rv ${c.estado === 'cancelada' ? 'x' : ''}">
