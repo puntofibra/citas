@@ -422,16 +422,24 @@ function slotsProf(neg, prof, dur, fecha, citas) {
   const hoy = hoyStr();
   const minimo = fecha === hoy ? ahoraMin() + (+neg.antelacion || 0) : (fecha < hoy ? 99999 : -1);
   const ocup = citas.filter(c => c.profId === prof.id).map(c => [minutos(c.hora), minutos(c.hora) + (+c.dur || 30)]);
+  const rangos = h.map(r => [minutos(r[0]), minutos(r[1])]);
+  return rejilla_(rangos, ocup, paso).filter(t => t >= minimo && rangos.some(r => t >= r[0] && t + dur <= r[1]) && !ocup.some(o => t < o[1] && t + dur > o[0]));
+}
+/* Horas candidatas: cada "paso" minutos desde que abre, y cuando termina una cita la cuenta
+   vuelve a empezar justo en ese minuto (así no se pierden huecos entre citas). */
+function rejilla_(rangos, ocup, paso) {
   const out = [];
-  h.forEach(r => {
-    const fin = minutos(r[1]);
-    for (let t = minutos(r[0]); t + dur <= fin; t += paso) {
-      if (t < minimo) continue;
-      if (ocup.some(o => t < o[1] && t + dur > o[0])) continue;
-      out.push(t);
-    }
+  const oc = ocup.slice().sort((a, b) => a[0] - b[0]);
+  rangos.forEach(r => {
+    let cur = r[0];
+    const dentro = oc.filter(o => o[1] > r[0] && o[0] < r[1]);
+    dentro.forEach(o => {
+      for (let t = cur; t < Math.min(o[0], r[1]); t += paso) out.push(t);
+      cur = Math.max(cur, o[1]);
+    });
+    for (let t = cur; t < r[1]; t += paso) out.push(t);
   });
-  return out;
+  return [...new Set(out)].sort((a, b) => a - b);
 }
 function calcDisp(neg, servId, profId, fecha) {
   if (!esFecha(fecha)) throw new Error('Fecha no válida');
@@ -472,20 +480,20 @@ function calcDispGrupo(neg, personas, fecha) {
   });
   const rangos = {}; profs.forEach(pr => { rangos[pr.id] = ((pr.horario || {})[dw] || []).map(r => [minutos(r[0]), minutos(r[1])]); });
   const ocBase = {}; profs.forEach(pr => { ocBase[pr.id] = citas.filter(c => c.profId === pr.id).map(c => [minutos(c.hora), minutos(c.hora) + (+c.dur || 30)]); });
-  let ini = 9999, fin = 0;
-  profs.forEach(pr => rangos[pr.id].forEach(r => { ini = Math.min(ini, r[0]); fin = Math.max(fin, r[1]); }));
   const libre = (pid, s, d, oc) => rangos[pid].some(r => s >= r[0] && s + d <= r[1]) && !oc[pid].some(o => s < o[1] && s + d > o[0]);
+  const capIds = {}; pers.forEach(pe => pe.cap.forEach(c => { capIds[c.id] = 1; }));
+  const inicios = [...new Set([].concat.apply([], Object.keys(capIds).map(pid => rejilla_(rangos[pid], ocBase[pid], paso))))].sort((a, b) => a - b);
   const slots = [];
-  for (let t0 = ini; t0 < fin; t0 += paso) {
+  for (const t0 of inicios) {
     if (t0 < minimo) continue;
     const oc = {}; Object.keys(ocBase).forEach(k => { oc[k] = ocBase[k].slice(); });
     const asig = []; let acum = 0, ok = true;
     for (let i = 0; i < pers.length && ok; i++) {
       const pe = pers[i]; let hecho = false;
-      for (let s = t0; s <= t0 + acum && !hecho; s += paso) {
-        if (s < minimo) continue;
+      const cand = [...new Set([].concat.apply([t0], pe.cap.map(c => rejilla_(rangos[c.id], oc[c.id], paso))))].filter(s => s >= t0 && s <= t0 + acum && s >= minimo).sort((a, b) => a - b);
+      for (const s of cand) {
         const pr = pe.cap.filter(c => libre(c.id, s, pe.dur, oc))[0];
-        if (pr) { oc[pr.id].push([s, s + pe.dur]); asig.push({ p: pr.id, h: hhmm(s), dur: pe.dur }); hecho = true; }
+        if (pr) { oc[pr.id].push([s, s + pe.dur]); asig.push({ p: pr.id, h: hhmm(s), dur: pe.dur }); hecho = true; break; }
       }
       if (!hecho) ok = false; else acum += pe.dur;
     }
