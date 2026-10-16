@@ -39,7 +39,25 @@ function setup() {
 }
 
 /* ============ ENTRADA HTTP ============ */
-function doGet() { return salida({ ok: true, app: APP_NOMBRE }); }
+function doGet(e) {
+  const q = (e && e.parameter) || {};
+  if (q.m) return manifiesto_(q.m, q.b);
+  return salida({ ok: true, app: APP_NOMBRE });
+}
+/* Manifiesto PWA de cada negocio: así el cliente instala "la app de su peluquería" con su nombre */
+function manifiesto_(slug, base) {
+  base = String(base || '');
+  if (!/^https:\/\/[a-z0-9.-]+\/[^?#]*\/$/i.test(base)) base = 'https://puntofibra.github.io/citas/';
+  let n = null; try { n = negPorSlug(slug); } catch (err) { }
+  const nombre = n ? String(n.nombre) : APP_NOMBRE;
+  const start = base + (n ? '?n=' + encodeURIComponent(n.slug) : '');
+  const color = n && /^#[0-9a-f]{6}$/i.test(n.color || '') ? n.color : '#2563eb';
+  const m = { id: start, name: nombre, short_name: nombre.slice(0, 14), description: 'Reserva tu cita en ' + nombre,
+    start_url: start, scope: base, display: 'standalone', orientation: 'portrait', background_color: '#070d1a', theme_color: color,
+    icons: [{ src: base + 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: base + 'icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: base + 'maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] };
+  return ContentService.createTextOutput(JSON.stringify(m)).setMimeType(ContentService.MimeType.JSON);
+}
 
 function doPost(e) {
   let out;
