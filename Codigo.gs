@@ -442,18 +442,66 @@ function calcDisp(neg, servId, profId, fecha) {
   profs.forEach(pr => slotsProf(neg, pr, serv.duracion, fecha, citas).forEach(t => { if (!mapa[t]) mapa[t] = pr.id; }));
   return { serv: serv, slots: Object.keys(mapa).map(Number).sort((a, b) => a - b).map(t => ({ h: hhmm(t), p: mapa[t] })) };
 }
+/* ============ RESERVAS DE GRUPO (varias personas) ============ */
+function personasDe_(p) {
+  let ps = p.personas;
+  if (typeof ps === 'string') { try { ps = JSON.parse(ps); } catch (e) { ps = null; } }
+  if (!Array.isArray(ps) || ps.length < 2) return null;
+  if (ps.length > 6) throw new Error('Máximo 6 personas por reserva');
+  return ps.map((x, i) => ({ nombre: mayus(txt(x && x.nombre, 60)), serv: txt(x && x.serv, 300) }));
+}
+function calcDispGrupo(neg, personas, fecha) {
+  if (!esFecha(fecha)) throw new Error('Fecha no válida');
+  const todos = serviciosDe(neg.id), profs = profesDe(neg.id), citas = citasDia(neg.id, fecha);
+  const dw = String(diaSemana(fecha)), paso = Math.max(5, +neg.paso || 30), hoy = hoyStr();
+  const minimo = fecha === hoy ? ahoraMin() + (+neg.antelacion || 0) : (fecha < hoy ? 99999 : -1);
+  const pers = personas.map((x, i) => {
+    const ids = String(x.serv || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+    const lista = ids.map(id => todos.filter(s => s.id === id)[0]);
+    if (!ids.length || lista.some(s => !s)) throw new Error('Elige los servicios de la persona ' + (i + 1));
+    const cap = profs.filter(pr => !pr.servicios.length || ids.every(id => pr.servicios.indexOf(id) >= 0));
+    if (!cap.length) throw new Error('Ningún profesional hace todos los servicios de la persona ' + (i + 1));
+    return { nombre: x.nombre, ids: ids, serv: ids.join(','), nombreServ: lista.map(s => s.nombre).join(' + '),
+      dur: lista.reduce((a, s) => a + Number(s.duracion || 0), 0), precio: lista.reduce((a, s) => a + Number(s.precio || 0), 0), cap: cap };
+  });
+  const rangos = {}; profs.forEach(pr => { rangos[pr.id] = ((pr.horario || {})[dw] || []).map(r => [minutos(r[0]), minutos(r[1])]); });
+  const ocBase = {}; profs.forEach(pr => { ocBase[pr.id] = citas.filter(c => c.profId === pr.id).map(c => [minutos(c.hora), minutos(c.hora) + (+c.dur || 30)]); });
+  let ini = 9999, fin = 0;
+  profs.forEach(pr => rangos[pr.id].forEach(r => { ini = Math.min(ini, r[0]); fin = Math.max(fin, r[1]); }));
+  const libre = (pid, s, d, oc) => rangos[pid].some(r => s >= r[0] && s + d <= r[1]) && !oc[pid].some(o => s < o[1] && s + d > o[0]);
+  const slots = [];
+  for (let t0 = ini; t0 < fin; t0 += paso) {
+    if (t0 < minimo) continue;
+    const oc = {}; Object.keys(ocBase).forEach(k => { oc[k] = ocBase[k].slice(); });
+    const asig = []; let acum = 0, ok = true;
+    for (let i = 0; i < pers.length && ok; i++) {
+      const pe = pers[i]; let hecho = false;
+      for (let s = t0; s <= t0 + acum && !hecho; s += paso) {
+        if (s < minimo) continue;
+        const pr = pe.cap.filter(c => libre(c.id, s, pe.dur, oc))[0];
+        if (pr) { oc[pr.id].push([s, s + pe.dur]); asig.push({ p: pr.id, h: hhmm(s), dur: pe.dur }); hecho = true; }
+      }
+      if (!hecho) ok = false; else acum += pe.dur;
+    }
+    if (ok) slots.push({ h: hhmm(t0), p: '', a: asig });
+  }
+  return { pers: pers, slots: slots };
+}
 function dispRango(p) {
   const neg = negPorSlug(p.slug);
   if (!activo(neg)) throw new Error('Este negocio no admite reservas ahora mismo');
   const desde = txt(p.desde, 10), hasta = txt(p.hasta, 10);
   if (!esFecha(desde) || !esFecha(hasta) || hasta < desde) throw new Error('Fechas no válidas');
   const dias = {};
-  for (let f = desde, i = 0; f <= hasta && i < 42; f = sumaDias(f, 1), i++) dias[f] = calcDisp(neg, txt(p.serv, 300), txt(p.prof, 20), f).slots;
+  const ps = personasDe_(p);
+  for (let f = desde, i = 0; f <= hasta && i < 42; f = sumaDias(f, 1), i++) dias[f] = ps ? calcDispGrupo(neg, ps, f).slots.map(s => ({ h: s.h, p: '' })) : calcDisp(neg, txt(p.serv, 300), txt(p.prof, 20), f).slots;
   return { dias: dias };
 }
 function dispPublica(p) {
   const neg = negPorSlug(p.slug);
   if (!activo(neg)) throw new Error('Este negocio no admite reservas ahora mismo');
+  const ps = personasDe_(p);
+  if (ps) return { slots: calcDispGrupo(neg, ps, txt(p.fecha, 10)).slots.map(s => ({ h: s.h, p: '' })) };
   return { slots: calcDisp(neg, txt(p.serv, 300), txt(p.prof, 20), txt(p.fecha, 10)).slots };
 }
 
@@ -469,6 +517,27 @@ function reservar(p) {
   limite('res_' + neg.id + '_' + tel, 5, 3600);
   const fecha = txt(p.fecha, 10), hora = txt(p.hora, 5);
   if (!esHora(hora)) throw new Error('Hora no válida');
+  const ps = personasDe_(p);
+  if (ps) return conLock(() => {
+    const g = calcDispGrupo(neg, ps, fecha);
+    const slot = g.slots.filter(s => s.h === hora)[0];
+    if (!slot) throw new Error('Esa hora acaba de ocuparse. Elige otra.');
+    const codigo = String(Math.floor(100000 + Math.random() * 900000));
+    const profs = profesDe(neg.id, true), notas = txt(p.notas, 260);
+    const ids = []; let finMax = 0;
+    g.pers.forEach((pe, i) => {
+      const a = slot.a[i];
+      const quien = i === 0 ? cliente : (pe.nombre || 'Acompañante ' + (i + 1)) + ' · con ' + cliente;
+      const c = insertar('Citas', { id: uid(), negocioId: neg.id, profId: a.p, servId: pe.serv, fecha: fecha, hora: a.h, dur: pe.dur,
+        cliente: quien, tel: tel, email: email, notas: (notas ? notas + ' · ' : '') + 'Grupo de ' + g.pers.length, estado: 'confirmada', creado: hoyStr(), codigo: codigo });
+      ids.push(c.id); finMax = Math.max(finMax, minutos(a.h) + pe.dur);
+    });
+    const nomProf = id => { const x = profs.filter(y => y.id === id)[0]; return x ? x.nombre : ''; };
+    const detalle = g.pers.map((pe, i) => ({ nombre: i === 0 ? cliente : (pe.nombre || 'Acompañante ' + (i + 1)), servicio: pe.nombreServ, hora: slot.a[i].h, profesional: nomProf(slot.a[i].p), precio: pe.precio }));
+    return { id: ids[0], ids: ids, codigo: codigo, fecha: fecha, hora: hora, dur: finMax - minutos(hora), personas: g.pers.length, detalle: detalle,
+      servicio: g.pers.length + ' personas: ' + detalle.map(x => x.nombre.split(' ')[0] + ' (' + x.servicio + ')').join(', '),
+      precio: g.pers.reduce((a, x) => a + x.precio, 0), profesional: [...new Set(detalle.map(x => x.profesional).filter(Boolean))].join(', ') };
+  });
   return conLock(() => {
     const d = calcDisp(neg, txt(p.serv, 300), txt(p.prof, 20), fecha);
     const slot = d.slots.filter(s => s.h === hora)[0];
@@ -484,9 +553,8 @@ function cancelarPublica(p) {
   return conLock(() => {
     const c = tabla('Citas').filter(x => x.id === txt(p.id, 20))[0];
     if (!c || String(c.codigo) !== txt(p.codigo, 10)) throw new Error('Cita no encontrada');
-    if (c.estado === 'cancelada') return {};
-    c.estado = 'cancelada';
-    guardarFila('Citas', c);
+    tabla('Citas').filter(x => x.negocioId === c.negocioId && String(x.codigo) === String(c.codigo) && x.fecha === c.fecha && x.tel === c.tel && x.estado !== 'cancelada')
+      .forEach(x => { x.estado = 'cancelada'; guardarFila('Citas', x); });
     return {};
   });
 }
