@@ -9,7 +9,7 @@
 /* ============ CONFIG ============ */
 const ADMIN_EMAIL = 'futurmovil.com@gmail.com';
 const MYPOS_TAG = 'https://mypos.com/@futurmovil';
-const PRECIO_MES = 19;          // € por 30 días de suscripción
+const PRECIO_MES = 10;          // € por 30 días de suscripción
 const DIAS_PRUEBA = 14;         // prueba gratuita al registrarse
 const APP_NOMBRE = 'Citas Pro';
 const SESION_HORAS = 24 * 14;   // duración de la sesión
