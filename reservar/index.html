@@ -614,8 +614,10 @@ async function route() {
   if (IS_RES) { let g = null; try { g = localStorage.getItem('ci_neg'); } catch (e) { } if (g) return bookingInit(g); return location.replace(location.origin + ROOT + 'panel/'); }
   if (S.token) {
     let c = null; try { c = JSON.parse(localStorage.getItem('ci_yo') || 'null'); } catch (e) { }
-    if (c && c._t === S.token) {
-      panelInit(c);
+    if (c && c._t === S.token && c.negocio) {
+      try { panelInit(c); } catch (err) { try { localStorage.removeItem('ci_yo'); } catch (e) { } c = null; }
+    }
+    if (c && c._t === S.token && c.negocio) {
       call('yo').then(d => {
         if (d.admin) return adminInit(d);
         d._t = S.token; try { localStorage.setItem('ci_yo', JSON.stringify(d)); } catch (e) { }
@@ -625,7 +627,7 @@ async function route() {
       return;
     }
     $('#root').innerHTML = '<div class="center"><span class="spin"></span></div>';
-    try { const d = await call('yo'); if (!d.admin) { d._t = S.token; try { localStorage.setItem('ci_yo', JSON.stringify(d)); } catch (e) { } } return d.admin ? adminInit(d) : panelInit(d); } catch (e) {
+    try { const d = await call('yo'); if (!d.admin && !d.negocio) throw new Error('Respuesta del servidor incompleta'); if (!d.admin) { d._t = S.token; try { localStorage.setItem('ci_yo', JSON.stringify(d)); } catch (e) { } } return d.admin ? adminInit(d) : panelInit(d); } catch (e) {
       if (!S.token) return landing();
       $('#root').innerHTML = `<div class="center"><div class="card pad" style="text-align:center;max-width:360px"><h2 class="disp">Sin conexión con el servidor</h2><p class="mut">${esc(e.message)}</p><button class="btn pri block" onclick="route()">Reintentar</button><button class="btn block" style="margin-top:8px" onclick="S.token='';localStorage.removeItem('ci_t');localStorage.removeItem('ci_yo');route()">Volver a entrar</button></div></div>`;
       return;
@@ -1405,6 +1407,13 @@ H.totpOff = async () => { if (!await confirma({ titulo: '¿Desactivar Authentica
 
 /* ---------- arranque ---------- */
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));
+function pantallaError(msg) {
+  const r = $('#root'); if (!r || !r.querySelector(':scope > .center .spin')) return;
+  r.innerHTML = `<div class="center"><div class="card pad" style="text-align:center;max-width:380px"><h2 class="disp">No se ha podido abrir</h2><p class="mut small" style="word-break:break-word">${esc(String(msg || ''))}</p><button class="btn pri block" onclick="location.reload()">Reintentar</button><button class="btn block" style="margin-top:8px" onclick="try{localStorage.removeItem('ci_yo');localStorage.removeItem('ci_t')}catch(e){};location.reload()">Volver a entrar</button></div></div>`;
+}
+addEventListener('error', e => pantallaError(e.message));
+addEventListener('unhandledrejection', e => pantallaError(e.reason && e.reason.message || e.reason));
+setTimeout(() => pantallaError('El servidor tarda demasiado en responder.'), 30000);
 route();
 </script>
 </body>
