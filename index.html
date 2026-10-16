@@ -1033,14 +1033,14 @@ H.cancelarUlt = async () => {
    PANEL DEL NEGOCIO
    ===================================================== */
 let P = null;
-/* refresco automático de la agenda cada minuto (y al volver a la pestaña) */
+/* refresco automático de la agenda cada 20 segundos (y al volver a la pestaña) */
 function refrescoAgenda() {
   if (!P || P.tab !== 'agenda' || !$('#alist') || document.visibilityState !== 'visible') return;
   if ($('.mask')) return;
   const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && a.id !== 'fsel') return;
   pAgenda(true);
 }
-setInterval(refrescoAgenda, 60000);
+setInterval(refrescoAgenda, 20000);
 document.addEventListener('visibilitychange', refrescoAgenda);
 const TABS = [['agenda', 'cal', 'Agenda'], ['servicios', 'scissors', 'Servicios'], ['equipo', 'users', 'Equipo'], ['ajustes', 'set', 'Ajustes'], ['enlace', 'link', 'Mi enlace'], ['suscripcion', 'card', 'Plan']];
 function panelInit(d) {
