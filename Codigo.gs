@@ -58,10 +58,11 @@ function manifiesto_(slug, base) {
   const nombre = n ? String(n.nombre) : APP_NOMBRE;
   const start = base + (n ? '?n=' + encodeURIComponent(n.slug) : '');
   const color = n && /^#[0-9a-f]{6}$/i.test(n.color || '') ? n.color : '#2563eb';
+  const raiz = base.replace(/(reservar|panel)\/$/, '');
   const m = { id: start, name: nombre, short_name: nombre.slice(0, 14), description: 'Reserva tu cita en ' + nombre,
     start_url: start, scope: base, display: 'standalone', orientation: 'portrait', background_color: '#070d1a', theme_color: color,
-    icons: [{ src: base + 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: base + 'icon-512.png', sizes: '512x512', type: 'image/png' },
-      { src: base + 'maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] };
+    icons: [{ src: raiz + 'icon-192.png', sizes: '192x192', type: 'image/png' }, { src: raiz + 'icon-512.png', sizes: '512x512', type: 'image/png' },
+      { src: raiz + 'maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }] };
   return ContentService.createTextOutput(JSON.stringify(m)).setMimeType(ContentService.MimeType.JSON);
 }
 
