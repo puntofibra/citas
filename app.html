@@ -595,6 +595,7 @@ const Q = new URLSearchParams(location.search);
 /* rutas: /citas/panel/ (dueños) y /citas/reservar/ (clientes) — dos apps instalables por separado */
 const ROOT = location.pathname.replace(/(panel|reservar)\/[^/]*$/, '').replace(/[^/]*$/, '');
 const IS_RES = /\/reservar\/[^/]*$/.test(location.pathname);
+if (!IS_RES) { $$('link[rel=apple-touch-icon],link[rel=icon]').forEach(x => { x.href = 'panel-192.png'; }); const am = $('meta[name=apple-mobile-web-app-title]'); if (am) am.content = 'Citas Pro'; }
 const urlRes = slug => location.origin + ROOT + 'reservar/?n=' + encodeURIComponent(slug);
 async function route() {
   const slug = Q.get('n');

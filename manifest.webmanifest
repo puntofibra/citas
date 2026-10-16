@@ -6,21 +6,21 @@
   "scope": "./panel/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f4f7fc",
-  "theme_color": "#2563eb",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "panel-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "icon-512.png",
+      "src": "panel-512.png",
       "sizes": "512x512",
       "type": "image/png"
     },
     {
-      "src": "maskable-512.png",
+      "src": "panel-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
