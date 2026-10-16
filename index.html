@@ -118,6 +118,7 @@ hr.sep{border:0;border-top:1px solid var(--line);margin:18px 0}
 .mask{position:fixed;inset:0;z-index:80;background:rgba(10,5,20,.5);backdrop-filter:blur(6px);display:grid;place-items:center;padding:16px;animation:fade .25s}
 @keyframes fade{from{opacity:0}}
 .modal{width:min(560px,100%);max-height:92dvh;overflow:auto;background:var(--card2);border:1px solid var(--line);border-radius:26px;box-shadow:var(--sh);padding:24px;animation:pop .35s cubic-bezier(.2,.9,.25,1.1)}
+.wk{padding:0 10px;font-size:1rem;white-space:nowrap}
 @keyframes pop{from{opacity:0;transform:translateY(24px) scale(.96)}}
 /* ventanas de confirmación */
 .cfm{position:fixed;inset:0;z-index:95;background:rgba(5,10,25,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:16px;animation:fade .2s}
@@ -963,12 +964,12 @@ const pm = h => { $('#pmain').innerHTML = mtop() + h; reveal(); };
 async function pAgenda(silent) {
   if (!silent) pm(`<div class="ptitle"><h1 class="disp">Agenda</h1><div class="row"><button class="btn pri" data-a="nuevaCita">${ic('plus')} Cita manual</button></div></div>
     <div class="row" style="margin-bottom:16px;justify-content:space-between">
-      <div class="row"><button class="back" data-a="fecha" data-d="-1">${ic('left')}</button><button class="btn sm" data-a="hoy">Hoy</button><button class="back" data-a="fecha" data-d="1">${ic('right')}</button>
-      <input type="date" class="inp" id="fsel" value="${P.fecha}" style="width:auto"></div>
+      <div class="row"><button class="back" data-a="fecha" data-d="-1">${ic('left')}</button><button class="btn sm" data-a="hoy">${P.vista === 'dia' ? 'Hoy' : 'Esta semana'}</button><button class="back" data-a="fecha" data-d="1">${ic('right')}</button>
+      ${P.vista === 'dia' ? `<input type="date" class="inp" id="fsel" value="${P.fecha}" style="width:auto">` : `<b class="wk">${esc(rangoSemana(P.fecha))}</b>`}</div>
       <div class="tabs" style="width:210px;margin:0"><button data-a="vista" data-v="dia" class="${P.vista === 'dia' ? 'on' : ''}">Día</button><button data-a="vista" data-v="semana" class="${P.vista === 'semana' ? 'on' : ''}">Semana</button></div>
     </div>
     <div id="stats"></div><div id="alist"><div class="skel" style="height:90px;margin-bottom:10px"></div><div class="skel" style="height:90px"></div></div>`);
-  if (!silent) $('#fsel').onchange = e => { if (e.target.value) { P.fecha = e.target.value; pAgenda(); } };
+  if (!silent && $('#fsel')) $('#fsel').onchange = e => { if (e.target.value) { P.fecha = e.target.value; pAgenda(); } };
   const lun = addD(P.fecha, -((parseF(P.fecha).getDay() + 6) % 7));
   const desde = P.vista === 'dia' ? P.fecha : lun, hasta = P.vista === 'dia' ? P.fecha : addD(lun, 6);
   const k = desde + '_' + hasta; P.cache = P.cache || {};
@@ -983,6 +984,11 @@ async function pAgenda(silent) {
   if (P.tab !== 'agenda' || !$('#alist')) return;
   if (silent) toast('Agenda actualizada');
   pintaAgenda(); precarga();
+}
+function rangoSemana(f) {
+  const lun = parseF(addD(f, -((parseF(f).getDay() + 6) % 7))), dom = parseF(addD(toF(lun), 6));
+  const mes = d => d.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+  return lun.getMonth() === dom.getMonth() ? `${lun.getDate()} – ${dom.getDate()} ${mes(dom)} ${dom.getFullYear()}` : `${lun.getDate()} ${mes(lun)} – ${dom.getDate()} ${mes(dom)} ${dom.getFullYear()}`;
 }
 function agKey() { const lun = addD(P.fecha, -((parseF(P.fecha).getDay() + 6) % 7)); return P.vista === 'dia' ? P.fecha + '_' + P.fecha : lun + '_' + addD(lun, 6); }
 const agPend = {};
